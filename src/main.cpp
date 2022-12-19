@@ -8,33 +8,28 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-// // Declare Wifi SSID and Pass
-// const char *ssid = "PocoX3";
-// const char *password = "test1234";
+// Declare Wifi SSID and Pass
+const char *ssid = "PocoX3";
+const char *password = "test1234";
 
-// // TB Credential
-// #define THINGSBOARD_ACCESS_TOKEN "9eLeFg0SMhGfx0mElJpU"
-// #define THINGSBOARD_SERVER "demo.thingsboard.io"
+// TB Credential
+#define THINGSBOARD_ACCESS_TOKEN "9eLeFg0SMhGfx0mElJpU"
+#define THINGSBOARD_SERVER "demo.thingsboard.io"
 
-// // Oled Init
-// const int lebar = 128;
-// const int tinggi = 64;
-// const int reset = 4;
-// ol.r, tinggi, &Wire, reset);
+// Deklarasi Fungsi
+void WifiConnect();
 
-// // Deklarasi Fungsi
-// void WifiConnect();
+// Initialize ThingsBoard client
+WiFiClient espClient;
 
-// // Initialize ThingsBoard client
-// WiFiClient espClient;
-
-// // Initialize ThingsBoard instance
-// ThingsBoard tb(espClient);
+// Initialize ThingsBoard instance
+ThingsBoard tb(espClient);
 
 String temp = "Temperature : ";
 String ec = "Electroconductivity : ";
 String wc = "Water Content : ";
 
+// Oled Init
 const int lebar = 128;
 const int tinggi = 64;
 const int reset = 4;
@@ -47,15 +42,21 @@ float getTemperature(uint8_t tempR1, uint8_t tempR2); // declare variable for st
 float getElect(uint8_t ecR1, uint8_t ecR2);           // declare variable for storing ec values
 float getVwc(uint8_t wcR1, uint8_t wcR2);             // declare variable for storing vwc values
 
-const int SSR = 4;        // nama alias pin 4 dengan nama "SSR"
-const int threshold = 60; // Batas kelembaban tanah
+const int SSR = 4;            // nama alias pin 4 dengan nama "SSR"
+const int thresholddown = 20; // Batas kelembaban tanah bawah
+const int thresholdup = 50;   // Batas kelembaban tanah bawah
 
+void thingsBoardConnect();
 void trigPump();
 void getData();
 void deepSleep();
 
+bool pumpState;
+
 void setup()
 {
+  pumpState = false;
+  digitalWrite(SSR, LOW);
   Serial2.begin(9600, SERIAL_8N1, 16, 17);
   Serial.begin(9600);
   // WifiConnect();
@@ -66,41 +67,33 @@ void setup()
 
 void loop()
 {
-
-  // TB Connect
-  // if (!tb.connected())
-  // {
-  //   if (tb.connect(THINGSBOARD_SERVER, THINGSBOARD_ACCESS_TOKEN))
-  //     Serial.println("Connected to thingsboard");
-  //   else
-  //   {
-  //     Serial.println("Error connecting to thingsboard");
-  //     delay(3000);
-  //   }
-  // }
-  // tb.loop();
+  // WifiConnect();
+  // thingsBoardConnect();
   getData();
-  if (getVwc(Anemometer_buf[5], Anemometer_buf[6]) < threshold)
-  {
-    Serial.println("POMPA TRIGGER");
 
-    trigPump();
-  }
-  else if (getVwc(Anemometer_buf[5], Anemometer_buf[6]) >= threshold)
+  Serial.println(pumpState);
+  if (!pumpState && getVwc(Anemometer_buf[5], Anemometer_buf[6]) <= thresholddown)
   {
-    digitalWrite(SSR, LOW);
-    Serial.println("POMPA OFF");
-    deepSleep();
+    Serial.print("Sampe Sini Pump State Nyala");
+    pumpState = true;
   }
+
+  if (pumpState && getVwc(Anemometer_buf[5], Anemometer_buf[6]) >= thresholdup)
+  {
+    Serial.print("Sampe Sini Pump State Mati");
+    pumpState = false;
+  }
+
+  trigPump();
 
   float TempData = getTemperature(Anemometer_buf[3], Anemometer_buf[4]);
-  // tb.sendTelemetryFloat("Temp", TempData);
+  tb.sendTelemetryFloat("Temp", TempData);
 
   float VwcData = getVwc(Anemometer_buf[5], Anemometer_buf[6]);
-  // tb.sendTelemetryFloat("Vwc", VwcData);
+  tb.sendTelemetryFloat("Vwc", VwcData);
 
   float EcData = getElect(Anemometer_buf[7], Anemometer_buf[8]);
-  // tb.sendTelemetryFloat("Ec", EcData);
+  tb.sendTelemetryFloat("Ec", EcData);
 
   memset(Anemometer_buf, 0x00, sizeof(Anemometer_buf));
 
@@ -132,20 +125,41 @@ void loop()
   delay(500);
 }
 
-// void WifiConnect()
-// {
-//   WiFi.mode(WIFI_STA);
-//   WiFi.begin(ssid, password);
-//   while (WiFi.waitForConnectResult() != WL_CONNECTED)
-//   {
-//     Serial.println("Connection Failed! Rebooting...");
-//     delay(5000);
-//     ESP.restart();
-//   }
-//   Serial.print("System connected with IP address: ");
-//   Serial.println(WiFi.localIP());
-//   Serial.printf("RSSI: %d\n", WiFi.RSSI());
-// }
+void WifiConnect()
+{
+  int count = 0;
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.waitForConnectResult() != WL_CONNECTED)
+  {
+    Serial.println("Connection Failed! Rebooting...");
+    delay(1000);
+    ESP.restart();
+
+    if (WL_CONNECTED)
+    {
+      Serial.print("System connected with IP address: ");
+      Serial.println(WiFi.localIP());
+      Serial.printf("RSSI: %d\n", WiFi.RSSI());
+    }
+  }
+}
+
+void thingsBoardConnect()
+{
+  if (!tb.connected())
+  {
+    if (tb.connect(THINGSBOARD_SERVER, THINGSBOARD_ACCESS_TOKEN))
+      Serial.println("Connected to thingsboard");
+    else
+    {
+      Serial.println("Error connecting to thingsboard");
+      delay(3000);
+    }
+  }
+  tb.loop();
+}
 
 float getTemperature(uint8_t tempR1, uint8_t tempR2)
 {
@@ -163,7 +177,6 @@ float getElect(uint8_t ecR1, uint8_t ecR2)
 float getVwc(uint8_t wcR1, uint8_t wcR2)
 {
   uint16_t Vwc = ((uint16_t)wcR1 << 8) | wcR2;
-  // Vwc = Vwc / 100 * 1.32; // ini buat cocopeat
   Vwc = Vwc / 100; // ini buat sekam
 
   return Vwc;
@@ -196,21 +209,46 @@ void getData()
   Serial.println(getElect(Anemometer_buf[7], Anemometer_buf[8]));
 }
 
+void pumpStat()
+{
+
+  Serial.println(pumpState);
+  if (!pumpState && getVwc(Anemometer_buf[5], Anemometer_buf[6]) <= thresholddown)
+  {
+    Serial.print("Sampe Sini Pump State Nyala");
+    pumpState = true;
+  }
+
+  if (pumpState && getVwc(Anemometer_buf[5], Anemometer_buf[6]) >= thresholdup)
+  {
+    Serial.print("Sampe Sini Pump State Mati");
+    pumpState = false;
+  }
+}
+
 void trigPump()
 {
-  getData();
-  // Serial.println(getVwc(Anemometer_buf[5], Anemometer_buf[6]));
+  // unsigned long interval = 4000;
+  // unsigned long previousMillis = 0;
+  // unsigned long currentMillis = millis();
 
-  if (getVwc(Anemometer_buf[5], Anemometer_buf[6]) < threshold)
+  if (pumpState == true)
   {
-    // Serial.println("Pompa Nyala");
-    digitalWrite(SSR, HIGH); // lampu akan hidup
+    // if (currentMillis - previousMillis >= interval)
+    // {
+    digitalWrite(SSR, HIGH);
     Serial.println("Pompa Nyala");
+    // previousMillis = millis();
+    // pumpStatus = true; // THINGSBOARD
+    // tb.sendAttributeBool("Pump Status", pumpStatus); // THINGSBOARD
+    // }
   }
-  else if (getVwc(Anemometer_buf[5], Anemometer_buf[6]) >= threshold)
+  else if (pumpState == false)
   {
-    digitalWrite(SSR, LOW); // lampu akan hidup
+    // pumpStatus = true; // THINGSBOARD
+    // tb.sendAttributeBool("Pump Status", pumpStatus); // THINGSBOARD
     Serial.println("Pompa Meninggal");
+    digitalWrite(SSR, LOW);
   }
 }
 
