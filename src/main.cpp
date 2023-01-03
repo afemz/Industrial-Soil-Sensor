@@ -60,6 +60,9 @@ const int pompa = 27;         // nama alias pin 4 dengan nama "pompa"
 const int thresholddown = 20; // Batas kelembaban tanah bawah
 const int thresholdup = 50;   // Batas kelembaban tanah bawah
 
+const int dry = 2700;
+const int wet = 985;
+
 // Constants
 const int hygrometer = 33; // Hygrometer sensor analog pin output at pin A0 of Arduino
 // Constants
@@ -71,9 +74,11 @@ DHT dht(dhtpin, DHTTYPE); //// Initialize DHT sensor for normal 16mhz Arduino
 float hum;  // Stores humidity value
 float temp; // Stores temperature value
 
-int soilHumidity;
-
 int val = 0;
+int VWCcheap;
+
+unsigned long previousMillis = 0;
+unsigned long period = 30000;
 
 void thingsBoardConnect();
 void trigPump();
@@ -82,12 +87,20 @@ void deepSleep();
 void humidityChp();
 void WiFiConnect();
 void fbSendData();
+
 // void WifiReconnect();
 
 bool pumpState;
 
 unsigned long sendDataPrevMillis = 0;
 bool signupOK = false;
+
+// float GET_VWC_TEST(uint16_t wcMSB, uint16_t wcLSB)
+// {
+//   int rawdata = (wcMSB * 256 + wcLSB);
+//   float cleandata = (rawdata / 100.0);
+//   return cleandata;
+// }
 
 void setup()
 {
@@ -125,6 +138,9 @@ void setup()
 
   oled.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 
+  // Serial.println("GET VWC SETUP: ");
+  // Serial.print(GET_VWC_TEST(0x0E, 0x93));
+
   oled.clearDisplay();
 }
 
@@ -133,6 +149,7 @@ void loop()
   // WifiReconnect();
   thingsBoardConnect();
   getData();
+  humidityChp();
 
   Serial.print("PumpState : ");
   Serial.println(pumpState);
@@ -148,9 +165,7 @@ void loop()
     pumpState = false;
   }
 
-  // trigPump();
-
-  float TempData = getTemperature(Anemometer_buf[3], Anemometer_buf[4]);
+  // float TempData = getTemperature(Anemometer_buf[3], Anemometer_buf[4]);
   // tb.sendTelemetryFloat("Temp", TempData);
 
   float VwcData = getVwc(Anemometer_buf[5], Anemometer_buf[6]);
@@ -158,9 +173,6 @@ void loop()
 
   float EcData = getElect(Anemometer_buf[7], Anemometer_buf[8]);
   tb.sendTelemetryFloat("Ec", EcData);
-
-  Firebase.RTDB.setFloat(&fbdo, "SensorReading/VWCindustry", VwcData);
-  Firebase.RTDB.setFloat(&fbdo, "SensorReading/ECindustry", EcData);
 
   memset(Anemometer_buf, 0x00, sizeof(Anemometer_buf));
 
@@ -176,20 +188,21 @@ void loop()
   Serial.print(" %, Temp: ");
   Serial.print(temp);
 
-  humidityChp();
+  Firebase.RTDB.setFloat(&fbdo, "SensorReading/VWCindustry", VwcData);
+  Firebase.RTDB.setFloat(&fbdo, "SensorReading/ECindustry", EcData);
+
+  Firebase.RTDB.setInt(&fbdo, "SensorReading/RoomHum", hum);
+  Firebase.RTDB.setInt(&fbdo, "SensorReading/RoomTmp", temp);
+
+  trigPump();
 
   // val = digitalRead(pompa);
   // Serial.print("status SSR:");
   // Serial.println(val);
+  oled.clearDisplay();
 
   oled.setTextSize(1);
   oled.setTextColor(WHITE);
-
-  // Temp Oled
-  oled.setCursor(10, 5);
-  oled.println("Temp : ");
-  oled.setCursor(50, 5);
-  oled.println(TempData);
 
   // VWC Oled
   oled.setCursor(10, 15);
@@ -205,9 +218,10 @@ void loop()
 
   oled.display();
   delay(100);
-  oled.clearDisplay();
 
-  delay(500);
+  Serial.println("  ");
+
+  delay(100);
 }
 
 void thingsBoardConnect()
@@ -232,6 +246,10 @@ float getTemperature(uint8_t tempR1, uint8_t tempR2)
   return temperature;
 }
 
+// int rawdata = (wcMSB * 256 + wcLSB);
+// float cleandata = (rawdata / 100.0);
+// return cleandata;
+
 float getElect(uint8_t ecR1, uint8_t ecR2)
 {
   uint16_t elect = ((uint16_t)ecR1 << 8) | ecR2;
@@ -241,7 +259,10 @@ float getElect(uint8_t ecR1, uint8_t ecR2)
 float getVwc(uint8_t wcR1, uint8_t wcR2)
 {
   uint16_t Vwc = ((uint16_t)wcR1 << 8) | wcR2;
-  Vwc = Vwc / 100; // ini buat sekam
+  Vwc = Vwc / 100;
+
+  // int rawVwc = (wcR1 * 256 + wcR2);
+  // float cleanVwc = (rawVwc / 100);
 
   return Vwc;
 }
@@ -273,63 +294,65 @@ void getData()
   Serial.println(getElect(Anemometer_buf[7], Anemometer_buf[8]));
 }
 
+bool toggle = true;
+
 void trigPump()
 {
+
   unsigned long currentMillis = millis();
-  unsigned long previousMillis = 0;
-  unsigned long period = 30000;
+  Serial.println("  ");
+  Serial.println("ini current millis : ");
+  Serial.println(currentMillis);
+  Serial.println("Ini Previous Millis : ");
+  Serial.println(previousMillis);
   bool pumpStatus;
 
   if (pumpState == true)
   {
+
     pumpStatus = true;                               // THINGSBOARD
     tb.sendAttributeBool("Pump Status", pumpStatus); // THINGSBOARD
 
-    digitalWrite(pompa, HIGH);
-    Serial.println("Pompa Nyala");
-    if (currentMillis - previousMillis >= period)
+    // toggle = pumpState;
+    toggle ? digitalWrite(pompa, HIGH) : digitalWrite(pompa, LOW);
+    toggle ? Serial.println("Pompa Nyala") : Serial.println("Pompa Mati");
+
+    if ((unsigned long)(currentMillis - previousMillis) >= period)
     {
+      Serial.println("Masuk pompa Off");
       digitalWrite(pompa, LOW);
+      toggle = false;
+    }
+    if ((unsigned long)(currentMillis - previousMillis) >= period + 5000)
+    {
+      Serial.println("Masuk pompa On lagi!");
+      toggle = true;
       previousMillis = currentMillis;
     }
-    // delay(30000); // Delay agar arus air sampai pada valve sebelum terbuka
-
-    // delay(5000);
-
-    Serial.println("Masuk delay pompa");
-    digitalWrite(pompa, LOW);
-    delay(5000); // Delay agar air meresap media
-    if (pumpState == false)
-    {
-      // pumpStatus = false;                              // THINGSBOARD
-      // tb.sendAttributeBool("Pump Status", pumpStatus); // THINGSBOARD
-      Serial.println("Pompa Meninggal");
-      digitalWrite(pompa, LOW);
-    }
   }
-  else if (pumpState == false)
+  else
   {
-    pumpStatus = false;                              // THINGSBOARD
-    tb.sendAttributeBool("Pump Status", pumpStatus); // THINGSBOARD
-    Serial.println("Pompa Meninggal 2");
+    Serial.println("tanah basah");
     digitalWrite(pompa, LOW);
   }
 }
 
 void humidityChp()
 {
-  soilHumidity = analogRead(hygrometer); // Read analog value
-  // Serial.println(" ");
-  // Serial.println("value analog :");
-  // Serial.println(value);5
-  soilHumidity = constrain(soilHumidity, 2500, 4095); // Keep the ranges!
 
-  soilHumidity = map(soilHumidity, 4095, 2500, 0, 100); // Map value : 400 will be 100 and 1023 will be 0
+  int sensorVal = analogRead(33);
+  int humPercentage = map(sensorVal, wet, dry, 100, 0);
+  // int VWCcheap = humPercentage;
+  tb.sendTelemetryFloat("VWCchp", humPercentage);
+  Firebase.RTDB.setInt(&fbdo, "SensorReading/VWCcheap", humPercentage);
 
-  tb.sendTelemetryFloat("VWCchp", soilHumidity);
+  // Temp Oled
+  oled.setCursor(10, 5);
+  oled.println("VWCCHP : ");
+  oled.setCursor(50, 5);
+  oled.println(humPercentage);
 
-  Serial.print("Soil humidity: ");
-  Serial.print(soilHumidity);
+  Serial.print(humPercentage);
   Serial.println("%");
 }
 
@@ -349,37 +372,6 @@ void WiFiConnect()
   Serial.printf("RSSI: %d\n", WiFi.RSSI());
 }
 
-void WifiConnect()
-{
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED)
-  {
-    Serial.println("Connection Failed! Rebooting...");
-    delay(5000);
-    ESP.restart();
-  }
-  Serial.print("System connected with IP address: ");
-  Serial.println(WiFi.localIP());
-  Serial.printf("RSSI: %d\n", WiFi.RSSI());
-}
-
-// unsigned long previousMillis = 0;
-// unsigned long interval = 5000;
-// void WifiReconnect()
-// {
-//     unsigned long currentMillis = millis();
-//     // if WiFi is down, try reconnecting every CHECK_WIFI_TIME seconds
-//     if ((WiFi.status() != WL_CONNECTED) && (currentMillis - previousMillis >= interval))
-//     {
-//         Serial.print(millis());
-//         Serial.println("Reconnecting to WiFi...");
-//         WiFi.disconnect();
-//         WiFi.reconnect();
-//         previousMillis = currentMillis;
-//     }
-// }
-
 void fbSendData()
 {
 
@@ -387,7 +379,6 @@ void fbSendData()
   if (Firebase.ready() && signupOK)
   {
     // Write an Int number on the database path test/int
-    Firebase.RTDB.setInt(&fbdo, "SensorReading/VWCcheap", soilHumidity);
 
     Firebase.RTDB.setInt(&fbdo, "SensorReading/RoomHum", hum);
     Firebase.RTDB.setInt(&fbdo, "SensorReading/RoomTmp", temp);
@@ -399,3 +390,5 @@ void fbSendData()
 //     esp_sleep_enable_timer_wakeup(10000000);
 //     esp_deep_sleep_start();
 // }
+
+// （0EH * 256 + 93H） / 100 = 3731 / 100 = 37.31 %
