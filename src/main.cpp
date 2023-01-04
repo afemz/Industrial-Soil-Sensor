@@ -59,8 +59,8 @@ const int pompa = 27;         // nama alias pin 4 dengan nama "pompa"
 const int thresholddown = 20; // Batas kelembaban tanah bawah
 const int thresholdup = 50;   // Batas kelembaban tanah bawah
 
-const int dry = 2700;
-const int wet = 950;
+const int dry = 2500;
+const int wet = 970;
 
 // Constants
 const int hygrometer = 33; // Hygrometer sensor analog pin output at pin 33 of Arduino
@@ -77,7 +77,7 @@ int val = 0;
 int VWCcheap;
 
 unsigned long previousMillis = 0;
-unsigned long period = 20000;
+unsigned long period = 5000;
 
 void thingsBoardConnect();
 void trigPump();
