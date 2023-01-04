@@ -8,7 +8,6 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include "DHT.h"
 #include <Adafruit_Sensor.h>
 #include <Firebase_ESP_Client.h>
 
@@ -61,15 +60,15 @@ const int thresholddown = 20; // Batas kelembaban tanah bawah
 const int thresholdup = 50;   // Batas kelembaban tanah bawah
 
 const int dry = 2700;
-const int wet = 985;
+const int wet = 950;
 
 // Constants
-const int hygrometer = 33; // Hygrometer sensor analog pin output at pin A0 of Arduino
+const int hygrometer = 33; // Hygrometer sensor analog pin output at pin 33 of Arduino
 // Constants
-const int dhtpin = 32; // dht sensor analog pin output at pin A0 of Arduino
+// const int dhtpin = 32; // dht sensor analog pin output at pin 32 of Arduino
 
-#define DHTTYPE DHT22     // DHT 22  (AM2302)
-DHT dht(dhtpin, DHTTYPE); //// Initialize DHT sensor for normal 16mhz Arduino
+// #define DHTTYPE DHT22     // DHT 22  (AM2302)
+// DHT dht(dhtpin, DHTTYPE); //// Initialize DHT sensor for normal 16mhz Arduino
 
 float hum;  // Stores humidity value
 float temp; // Stores temperature value
@@ -78,7 +77,7 @@ int val = 0;
 int VWCcheap;
 
 unsigned long previousMillis = 0;
-unsigned long period = 30000;
+unsigned long period = 20000;
 
 void thingsBoardConnect();
 void trigPump();
@@ -86,7 +85,7 @@ void getData();
 void deepSleep();
 void humidityChp();
 void WiFiConnect();
-void fbSendData();
+// void fbSendData();
 
 // void WifiReconnect();
 
@@ -131,7 +130,7 @@ void setup()
 
   pinMode(pompa, OUTPUT);
 
-  dht.begin();
+  // dht.begin();
   pumpState = false;
   digitalWrite(pompa, LOW);
   Serial2.begin(9600, SERIAL_8N1, 16, 17);
@@ -176,12 +175,10 @@ void loop()
 
   memset(Anemometer_buf, 0x00, sizeof(Anemometer_buf));
 
-  hum = dht.readHumidity();
-  tb.sendTelemetryFloat("RoomHum", hum);
-  temp = dht.readTemperature();
-  tb.sendTelemetryFloat("RoomTemp", temp);
-
-  fbSendData();
+  // hum = dht.readHumidity();
+  // tb.sendTelemetryFloat("RoomHum", hum);
+  // temp = dht.readTemperature();
+  // tb.sendTelemetryFloat("RoomTemp", temp);
 
   Serial.print("Humidity: ");
   Serial.print(hum);
@@ -190,9 +187,10 @@ void loop()
 
   Firebase.RTDB.setFloat(&fbdo, "SensorReading/VWCindustry", VwcData);
   Firebase.RTDB.setFloat(&fbdo, "SensorReading/ECindustry", EcData);
+  Firebase.RTDB.setBool(&fbdo, "SensorReading/PumpState", pumpState);
 
-  Firebase.RTDB.setInt(&fbdo, "SensorReading/RoomHum", hum);
-  Firebase.RTDB.setInt(&fbdo, "SensorReading/RoomTmp", temp);
+  // Firebase.RTDB.setInt(&fbdo, "SensorReading/RoomHum", hum);
+  // Firebase.RTDB.setInt(&fbdo, "SensorReading/RoomTmp", temp);
 
   trigPump();
 
@@ -284,13 +282,13 @@ void getData()
     }
     Serial.println(" ");
   }
-  Serial.print("Temperature : ");
-  Serial.println(getTemperature(Anemometer_buf[3], Anemometer_buf[4]));
+  // Serial.print("Temperature : ");
+  // Serial.println(getTemperature(Anemometer_buf[3], Anemometer_buf[4]));
 
-  Serial.print("Water Content : ");
+  Serial.print("Soil Moisture Industrial Sensor : ");
   Serial.println(getVwc(Anemometer_buf[5], Anemometer_buf[6]));
 
-  Serial.print("Electroconductivity : ");
+  Serial.print("Electroconductivity Industrial Sensor : ");
   Serial.println(getElect(Anemometer_buf[7], Anemometer_buf[8]));
 }
 
@@ -343,17 +341,35 @@ void humidityChp()
   int sensorVal = analogRead(33);
   int humPercentage = map(sensorVal, wet, dry, 100, 0);
   // int VWCcheap = humPercentage;
+
   tb.sendTelemetryFloat("VWCchp", humPercentage);
   Firebase.RTDB.setInt(&fbdo, "SensorReading/VWCcheap", humPercentage);
 
-  // Temp Oled
-  oled.setCursor(10, 5);
-  oled.println("VWCCHP : ");
-  oled.setCursor(50, 5);
-  oled.println(humPercentage);
-
-  Serial.print(humPercentage);
-  Serial.println("%");
+  // // Temp Oled
+  // oled.setCursor(10, 5);
+  // oled.println("VWCCHP : ");
+  // oled.setCursor(50, 5);
+  // oled.println(humPercentage);
+  if (humPercentage <= 2)
+  {
+    humPercentage = 0;
+    Serial.print("Low cost Soil Moisture Sensor Value : ");
+    Serial.print(humPercentage);
+    Serial.println("%");
+  }
+  else if (humPercentage >= 100)
+  {
+    humPercentage = 100;
+    Serial.print("Low cost Soil Moisture Sensor Value : ");
+    Serial.print(humPercentage);
+    Serial.println("%");
+  }
+  else
+  {
+    Serial.print("Low cost Soil Moisture Sensor Value : ");
+    Serial.print(humPercentage);
+    Serial.println("%");
+  }
 }
 
 void WiFiConnect()
@@ -370,19 +386,6 @@ void WiFiConnect()
   Serial.print("System connected with IP address: ");
   Serial.println(WiFi.localIP());
   Serial.printf("RSSI: %d\n", WiFi.RSSI());
-}
-
-void fbSendData()
-{
-
-  // tb.sendTelemetryFloat("Ec", EcData);
-  if (Firebase.ready() && signupOK)
-  {
-    // Write an Int number on the database path test/int
-
-    Firebase.RTDB.setInt(&fbdo, "SensorReading/RoomHum", hum);
-    Firebase.RTDB.setInt(&fbdo, "SensorReading/RoomTmp", temp);
-  }
 }
 
 // void deepSleep()
