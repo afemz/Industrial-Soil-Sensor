@@ -17,8 +17,8 @@
 #include "addons/RTDBHelper.h"
 
 // Insert your network credentials
-#define WIFI_SSID "dika"
-#define WIFI_PASSWORD "12345678"
+#define WIFI_SSID "SmartIoT"
+#define WIFI_PASSWORD "smartIoT!@#"
 
 // Insert Firebase project API Key
 #define API_KEY "AIzaSyCw3TXmvWJU1v5jxn4wZJC8xR3BmdvDU0A"
@@ -77,7 +77,7 @@ int val = 0;
 int VWCcheap;
 
 unsigned long previousMillis = 0;
-unsigned long period = 5000;
+unsigned long period = 10000;
 
 void thingsBoardConnect();
 void trigPump();
@@ -146,6 +146,7 @@ void setup()
 void loop()
 {
   // WifiReconnect();
+
   thingsBoardConnect();
   getData();
   humidityChp();
@@ -164,6 +165,7 @@ void loop()
     pumpState = false;
   }
 
+  trigPump();
   // float TempData = getTemperature(Anemometer_buf[3], Anemometer_buf[4]);
   // tb.sendTelemetryFloat("Temp", TempData);
 
@@ -185,14 +187,13 @@ void loop()
   Serial.print(" %, Temp: ");
   Serial.print(temp);
 
+  Firebase.reconnectWiFi(true);
   Firebase.RTDB.setFloat(&fbdo, "SensorReading/VWCindustry", VwcData);
   Firebase.RTDB.setFloat(&fbdo, "SensorReading/ECindustry", EcData);
   Firebase.RTDB.setBool(&fbdo, "SensorReading/PumpState", pumpState);
 
   // Firebase.RTDB.setInt(&fbdo, "SensorReading/RoomHum", hum);
   // Firebase.RTDB.setInt(&fbdo, "SensorReading/RoomTmp", temp);
-
-  trigPump();
 
   // val = digitalRead(pompa);
   // Serial.print("status SSR:");
