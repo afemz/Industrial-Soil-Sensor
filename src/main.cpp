@@ -1,3 +1,7 @@
+// #define BLYNK_TEMPLATE_ID "TMPLtTRnCSxO"
+// #define BLYNK_DEVICE_NAME "Monitoring"
+// #define BLYNK_AUTH_TOKEN "I9SeQV2Tmo--qoBjy8q18BZp5VEIl5sU"
+
 // #include <WiFiManager.h>
 #include <Arduino.h>
 #include <Update.h>
@@ -10,6 +14,8 @@
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_Sensor.h>
 #include <Firebase_ESP_Client.h>
+#include <DHT.h>
+// #include <BlynkSimpleEsp32.h>
 
 // Provide the token generation process info.
 #include "addons/TokenHelper.h"
@@ -27,7 +33,7 @@
 #define DATABASE_URL "soil-sensorsk-default-rtdb.asia-southeast1.firebasedatabase.app"
 
 // TB Credential
-#define THINGSBOARD_ACCESS_TOKEN "9eLeFg0SMhGfx0mElJpU"
+#define THINGSBOARD_ACCESS_TOKEN "8VQ4SvlYjUkqTGDhaCKJ"
 #define THINGSBOARD_SERVER "demo.thingsboard.io"
 
 // // Initialize ThingsBoard client
@@ -65,18 +71,19 @@ const int wet = 970;
 // Constants
 const int hygrometer = 33; // Hygrometer sensor analog pin output at pin 33 of Arduino
 // Constants
-// const int dhtpin = 32; // dht sensor analog pin output at pin 32 of Arduino
+const int dhtpin = 26; // dht sensor analog pin output at pin 32 of Arduino
 
-// #define DHTTYPE DHT22     // DHT 22  (AM2302)
-// DHT dht(dhtpin, DHTTYPE); //// Initialize DHT sensor for normal 16mhz Arduino
+DHT dht(dhtpin, DHT22); //// Initialize DHT sensor for normal 16mhz Arduino
 
 float hum;  // Stores humidity value
 float temp; // Stores temperature value
 
+int humPersen;
 int val = 0;
-int VWCcheap;
+int humPercentage;
 
 unsigned long previousMillis = 0;
+unsigned long millisTbSebelum = 0;
 unsigned long period = 10000;
 
 void thingsBoardConnect();
@@ -85,6 +92,7 @@ void getData();
 void deepSleep();
 void humidityChp();
 void WiFiConnect();
+void sendTb();
 // void fbSendData();
 
 // void WifiReconnect();
@@ -115,7 +123,7 @@ void setup()
   /* Sign up */
   if (Firebase.signUp(&config, &auth, "", ""))
   {
-    Serial.println("ok");
+    Serial.println("signn up success");
     signupOK = true;
   }
   else
@@ -130,7 +138,8 @@ void setup()
 
   pinMode(pompa, OUTPUT);
 
-  // dht.begin();
+  dht.begin();
+
   pumpState = false;
   digitalWrite(pompa, LOW);
   Serial2.begin(9600, SERIAL_8N1, 16, 17);
@@ -150,47 +159,47 @@ void loop()
   thingsBoardConnect();
   getData();
   humidityChp();
+  Firebase.reconnectWiFi(true);
 
-  Serial.print("PumpState : ");
-  Serial.println(pumpState);
+  // Serial.print("PumpState : ");
+  // Serial.println(pumpState);
   if (!pumpState && getVwc(Anemometer_buf[5], Anemometer_buf[6]) <= thresholddown)
   {
-    Serial.println("Sampe Sini Pump State Nyala");
+    // Serial.println("Sampe Sini Pump State Nyala");
     pumpState = true;
   }
 
   if (pumpState && getVwc(Anemometer_buf[5], Anemometer_buf[6]) >= thresholdup)
   {
-    Serial.println("Sampe Sini Pump State Mati");
+    // Serial.println("Sampe Sini Pump State Mati");
     pumpState = false;
   }
 
   trigPump();
-  // float TempData = getTemperature(Anemometer_buf[3], Anemometer_buf[4]);
-  // tb.sendTelemetryFloat("Temp", TempData);
 
   float VwcData = getVwc(Anemometer_buf[5], Anemometer_buf[6]);
-  tb.sendTelemetryFloat("Vwc", VwcData);
+  // tb.sendTelemetryFloat("Vwc", VwcData);
 
   float EcData = getElect(Anemometer_buf[7], Anemometer_buf[8]);
-  tb.sendTelemetryFloat("Ec", EcData);
+  // tb.sendTelemetryFloat("Ec", EcData);
 
   memset(Anemometer_buf, 0x00, sizeof(Anemometer_buf));
 
-  // hum = dht.readHumidity();
-  // tb.sendTelemetryFloat("RoomHum", hum);
-  // temp = dht.readTemperature();
-  // tb.sendTelemetryFloat("RoomTemp", temp);
+  hum = dht.readHumidity();
+  temp = dht.readTemperature();
+
+  unsigned long millisTb = millis();
+  if ((unsigned long)(millisTb - millisTbSebelum) >= 5000)
+  {
+    sendTb();
+    Serial.println("TbFb data Sent");
+    millisTbSebelum = millisTb;
+  }
 
   Serial.print("Humidity: ");
   Serial.print(hum);
   Serial.print(" %, Temp: ");
   Serial.print(temp);
-
-  Firebase.reconnectWiFi(true);
-  Firebase.RTDB.setFloat(&fbdo, "SensorReading/VWCindustry", VwcData);
-  Firebase.RTDB.setFloat(&fbdo, "SensorReading/ECindustry", EcData);
-  Firebase.RTDB.setBool(&fbdo, "SensorReading/PumpState", pumpState);
 
   // Firebase.RTDB.setInt(&fbdo, "SensorReading/RoomHum", hum);
   // Firebase.RTDB.setInt(&fbdo, "SensorReading/RoomTmp", temp);
@@ -278,10 +287,10 @@ void getData()
     Serial.println("Data: ");                                  // print out data
     for (byte i = 0; i < 11; i++)
     {
-      Serial.print(Anemometer_buf[i], HEX);
-      Serial.print(" ");
+      // Serial.print(Anemometer_buf[i], HEX);
+      // Serial.print(" ");
     }
-    Serial.println(" ");
+    // Serial.println(" ");
   }
   // Serial.print("Temperature : ");
   // Serial.println(getTemperature(Anemometer_buf[3], Anemometer_buf[4]));
@@ -299,32 +308,26 @@ void trigPump()
 {
 
   unsigned long currentMillis = millis();
-  Serial.println("  ");
-  Serial.println("ini current millis : ");
-  Serial.println(currentMillis);
-  Serial.println("Ini Previous Millis : ");
-  Serial.println(previousMillis);
+  // Serial.println("  ");
+
   bool pumpStatus;
 
   if (pumpState == true)
   {
 
-    pumpStatus = true;                               // THINGSBOARD
-    tb.sendAttributeBool("Pump Status", pumpStatus); // THINGSBOARD
-
     // toggle = pumpState;
     toggle ? digitalWrite(pompa, HIGH) : digitalWrite(pompa, LOW);
-    toggle ? Serial.println("Pompa Nyala") : Serial.println("Pompa Mati");
+    // toggle ? Serial.println("Pompa Nyala") : Serial.println("Pompa Mati");
 
     if ((unsigned long)(currentMillis - previousMillis) >= period)
     {
-      Serial.println("Masuk pompa Off");
+      // Serial.println("Masuk pompa Off");
       digitalWrite(pompa, LOW);
       toggle = false;
     }
     if ((unsigned long)(currentMillis - previousMillis) >= period + 5000)
     {
-      Serial.println("Masuk pompa On lagi!");
+      // Serial.println("Masuk pompa On lagi!");
       toggle = true;
       previousMillis = currentMillis;
     }
@@ -342,9 +345,6 @@ void humidityChp()
   int sensorVal = analogRead(33);
   int humPercentage = map(sensorVal, wet, dry, 100, 0);
   // int VWCcheap = humPercentage;
-
-  tb.sendTelemetryFloat("VWCchp", humPercentage);
-  Firebase.RTDB.setInt(&fbdo, "SensorReading/VWCcheap", humPercentage);
 
   // // Temp Oled
   // oled.setCursor(10, 5);
@@ -371,6 +371,31 @@ void humidityChp()
     Serial.print(humPercentage);
     Serial.println("%");
   }
+  humPersen = humPercentage;
+}
+
+void sendTb()
+{
+
+  getData();
+  float VwcData = getVwc(Anemometer_buf[5], Anemometer_buf[6]);
+  tb.sendTelemetryFloat("Vwc", VwcData);
+
+  float EcData = getElect(Anemometer_buf[7], Anemometer_buf[8]);
+  tb.sendTelemetryFloat("Ec", EcData);
+
+  humidityChp();
+  tb.sendTelemetryFloat("VWCchp", humPersen);
+
+  tb.sendTelemetryFloat("RoomHum", hum);
+  tb.sendTelemetryFloat("RoomTmp", temp);
+
+  Firebase.RTDB.setInt(&fbdo, "SensorReading/VWCcheap", humPersen);
+  Firebase.RTDB.setFloat(&fbdo, "SensorReading/VWCindustry", VwcData);
+  Firebase.RTDB.setFloat(&fbdo, "SensorReading/ECindustry", EcData);
+  Firebase.RTDB.setBool(&fbdo, "SensorReading/PumpState", pumpState);
+  Firebase.RTDB.setFloat(&fbdo, "SensorReading/RoomHum", hum);
+  Firebase.RTDB.setFloat(&fbdo, "SensorReading/RoomTmp", temp);
 }
 
 void WiFiConnect()
