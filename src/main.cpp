@@ -26,8 +26,6 @@
 // Insert your network credentials
 #define WIFI_SSID "SmartIoT"
 #define WIFI_PASSWORD "smartIoT!@#"
-// #define WIFI_SSID "dika"
-// #define WIFI_PASSWORD "12345678"
 
 // Insert Firebase project API Key
 #define API_KEY "AIzaSyCw3TXmvWJU1v5jxn4wZJC8xR3BmdvDU0A"
@@ -70,8 +68,11 @@ const int thresholdup = 40;   // Batas kelembaban tanah bawah
 
 int pumpInit = 0;
 
-const int dry = 3580;
-const int wet = 1420;
+// const int dry = 3580;
+// const int wet = 1420;
+
+const int dry = 2590;
+const int wet = 890;
 
 // Constants
 const int hygrometer = 33; // Hygrometer sensor analog pin output at pin 33 of Arduino
@@ -92,7 +93,7 @@ unsigned long millisTbSebelum = 0;
 unsigned long millisFbSebelum = 0;
 unsigned long millisRsSebelum = 0;
 
-unsigned long period = 5900;
+unsigned long period = 10000;
 unsigned long periodRestart = 1800000;
 
 void thingsBoardConnect();
@@ -204,7 +205,7 @@ void loop()
   hum = dht.readHumidity();
   temp = dht.readTemperature();
 
-  // Firebase.reconnectWiFi
+  // Firebase.reconnectWiFi();
 
   unsigned long millisTb = millis();
   if ((unsigned long)(millisTb - millisTbSebelum) >= 10000)
@@ -268,13 +269,12 @@ void loop()
   Serial.println("  ");
 
   unsigned long millisRs = millis();
-  if ((unsigned long)(millisRs - millisRsSebelum) >= periodRestart)
+  if (millisRs - millisRsSebelum >= periodRestart && (pumpState == false))
   {
-
     millisRsSebelum = millisRs;
     ESP.restart();
   }
-
+  Serial.println(millis());
   delay(100);
 }
 
@@ -354,15 +354,7 @@ void trigPump()
 {
 
   unsigned long currentMillis = millis();
-  // Serial.println("  ");
   bool pumpStatus;
-
-  // if (pumpInit == 1)
-  // {
-  //   (pompa, HIGH);
-  //   Serial.println("Masuk Pump Init");
-  //   delay(10000);
-  // }
 
   if (pumpState == true)
   {
@@ -397,33 +389,34 @@ void humidityChp()
   int sensorVal = analogRead(33);
   int humPercentage = map(sensorVal, wet, dry, 100, 0);
   // int VWCcheap = humPercentage;
+  Serial2.readBytes(Anemometer_buf, sizeof(Anemometer_buf));
+  float vwcCalibrate = getVwc(Anemometer_buf[5], Anemometer_buf[6]) * 1.075925;
+  int humPercentage1 = humPercentage - vwcCalibrate;
 
-  // // Temp Oled
-  // oled.setCursor(10, 5);
-  // oled.println("VWCCHP : ");
-  // oled.setCursor(50, 5);
-  // oled.println(humPercentage);
-  if (humPercentage <= 2)
+  // Serial.println(humPercentage1);
+
+  if (humPercentage1 <= 2)
   {
     humPercentage = 0;
     Serial.print("Low cost Soil Moisture Sensor Value : ");
-    Serial.print(humPercentage);
+    Serial.print(humPercentage1);
     Serial.println("%");
   }
-  else if (humPercentage >= 100)
+  else if (humPercentage1 >= 100)
   {
-    humPercentage = 100;
+    humPercentage1 = 100;
     Serial.print("Low cost Soil Moisture Sensor Value : ");
-    Serial.print(humPercentage);
+    Serial.print(humPercentage1);
     Serial.println("%");
   }
   else
   {
     Serial.print("Low cost Soil Moisture Sensor Value : ");
-    Serial.print(humPercentage);
+    Serial.print(humPercentage1);
     Serial.println("%");
   }
-  humPersen = humPercentage;
+  humPersen = humPercentage1;
+
   // Serial.print(sensorVal);
 }
 
